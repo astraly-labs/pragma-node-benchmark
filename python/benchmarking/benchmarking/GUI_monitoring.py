@@ -5,7 +5,6 @@ import time
 from scipy import stats
 import plotly.graph_objects as go
 
-# Configure the page
 st.set_page_config(
     page_title="Crypto Price Monitor",
     page_icon="📈",
@@ -25,7 +24,6 @@ def create_price_chart(history, selected_pair):
 
     fig = go.Figure()
     
-    # Add Pragma prices
     fig.add_trace(go.Scatter(
         x=times,
         y=pragma_prices,
@@ -33,7 +31,6 @@ def create_price_chart(history, selected_pair):
         line=dict(color='green', width=2)
     ))
     
-    # Add Pyth prices
     fig.add_trace(go.Scatter(
         x=times,
         y=pyth_prices,
@@ -111,7 +108,7 @@ def print_price_update(price_entry, price_history):
             print(f"{pair} => Pragma: ${pragma_price:,.2f}, Pyth: No data, Delta: Cannot calculate")
     return data_per_pair
 
-# Initialize the collector in session state if it doesn't exist
+
 if 'collector' not in st.session_state:
     st.session_state.collector = PriceCollector()
     st.session_state.collector.start()
@@ -120,7 +117,7 @@ if 'collector' not in st.session_state:
 def main():
     st.title("Real-time Crypto Price Monitor")
     
-    # Create header row with refresh button and status
+    # Header
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         if st.button('🔄 Refresh Data'):
@@ -132,15 +129,13 @@ def main():
         history = st.session_state.collector.get_history()
         st.write(f"History entries: {len(history)}")
     
-    # Add separator
     st.divider()
     
-    # Rest of the app
+    # Body
     if history and len(history) > 0:
         latest = history[-1]
         
         # Pair selection
-        # Add this near the beginning of your if history block, before the selectbox
         if 'selected_pair' not in st.session_state:
             st.session_state.selected_pair = sorted(latest['pragma_prices'].keys())[0]
         
@@ -152,16 +147,13 @@ def main():
         )
         st.session_state.selected_pair = selected_pair
         
-        # Create two columns for layout
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            # Display price chart
             fig = create_price_chart(history, selected_pair)
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            # Display metrics for selected pair
             metrics = print_price_update(latest, history)
             if metrics and selected_pair in metrics:
                 pair_metrics = metrics[selected_pair]
@@ -174,7 +166,6 @@ def main():
                 if pair_metrics['Spearman'] is not None:
                     st.write(f"Spearman: {pair_metrics['Spearman']:.3f}")
         
-        # Display full data at the bottom if needed
         if st.checkbox("Show Raw Data"):
             st.markdown("### Raw Data")
             st.write("Latest data:", latest)

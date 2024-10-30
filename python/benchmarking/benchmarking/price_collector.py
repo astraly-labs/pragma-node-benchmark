@@ -5,7 +5,7 @@ import time
 import threading
 from queue import Queue
 from typing import Dict
-from pyth import retrieve_pyth_prices
+from python.benchmarking.benchmarking.pyth_fetcher import retrieve_pyth_prices
 
 
 WEBSOCKET_URL = 'wss://ws.dev.pragma.build/node/v1/data/subscribe'
