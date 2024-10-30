@@ -3,15 +3,17 @@ import asyncio
 import websockets
 import time
 import threading
-from queue import Queue, Empty
-from typing import Dict, List
+from queue import Queue
+from typing import Dict
 from pyth import retrieve_pyth_prices
+
 
 WEBSOCKET_URL = 'wss://ws.dev.pragma.build/node/v1/data/subscribe'
 SUBSCRIPTION_MESSAGE = {
     'msg_type': 'subscribe',
     'pairs': ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']
 }
+
 
 class PriceCollector:
     def __init__(self):
@@ -73,7 +75,6 @@ class PriceCollector:
                         message = await websocket.recv()
                         try:
                             parsed_data = json.loads(message)
-                            
                             if 'oracle_prices' not in parsed_data:
                                 continue
 
@@ -131,48 +132,3 @@ class PriceCollector:
     def get_history(self):
         with self.lock:
             return self.price_history.copy()
-
-def print_price_update(price_entry):
-    if not price_entry:
-        return
-        
-    print("\nNew price update:")
-    print(f"Timestamp: {time.ctime(price_entry['timestamp'])}")
-    
-    pragma_prices = price_entry.get('pragma_prices', {})
-    pyth_prices = price_entry.get('pyth_prices', {})
-    
-    for pair in sorted(pragma_prices.keys()):
-        pragma_price = pragma_prices[pair]
-        pyth_price = pyth_prices.get(pair)
-        
-        if pyth_price:
-            delta = ((pragma_price - pyth_price) * 100) / pragma_price
-            print(f"{pair} => Pragma: ${pragma_price:,.2f}, Pyth: ${pyth_price:,.2f}, Delta: {delta:+.2f}%")
-        else:
-            print(f"{pair} => Pragma: ${pragma_price:,.2f}, Pyth: No data, Delta: Cannot calculate")
-
-def main():
-    collector = PriceCollector()
-    collector.start()
-    
-    try:
-        while True:
-            try:
-                new_price_entry = collector.update_queue.get(timeout=1)
-                if new_price_entry:
-                    print_price_update(new_price_entry)
-                    print(f"\nTotal entries in history: {len(collector.get_history())}")
-                
-            except Empty:
-                continue
-            except Exception as e:
-                print(f"Unexpected error in main loop: {e}")
-                
-    except KeyboardInterrupt:
-        print("\nStopping price collector...")
-        collector.stop()
-        print("Program terminated")
-
-if __name__ == "__main__":
-    main()
