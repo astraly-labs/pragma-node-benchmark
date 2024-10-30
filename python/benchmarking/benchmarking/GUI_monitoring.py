@@ -6,7 +6,7 @@ from scipy import stats
 import plotly.graph_objects as go
 
 st.set_page_config(
-    page_title="Crypto Price Monitor",
+    page_title="Websocket Monitoring",
     page_icon="📈",
     layout="wide"
 )
@@ -115,7 +115,7 @@ if 'collector' not in st.session_state:
     print("Price collector initialized and started")  # Debug print
 
 def main():
-    st.title("Real-time Crypto Price Monitor")
+    st.title("Websocket Monitoring")
     
     # Header
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -158,13 +158,40 @@ def main():
             if metrics and selected_pair in metrics:
                 pair_metrics = metrics[selected_pair]
                 st.markdown(f"### Current Metrics for {selected_pair}")
-                st.write(f"Pragma: ${pair_metrics['Pragma']:,.2f}")
-                st.write(f"Pyth: ${pair_metrics['Pyth']:,.2f}")
-                st.write(f"Delta: {pair_metrics['Delta']:+.2f}%")
-                if pair_metrics['MSE'] is not None:
-                    st.write(f"MSE: {pair_metrics['MSE']:.6f}")
-                if pair_metrics['Spearman'] is not None:
-                    st.write(f"Spearman: {pair_metrics['Spearman']:.3f}")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric(f"Pragma:", f"${pair_metrics['Pragma']:,.2f}")
+                with col2:
+                    st.metric(f"Pyth:",f"${pair_metrics['Pyth']:,.2f}")
+                
+                col3,col4,col5 = st.columns(3)
+                with col3:
+                    st.metric(f"Delta:", f"{pair_metrics['Delta']:+.2f}%")
+                with col4:
+                    if pair_metrics['MSE'] is not None:
+                        st.metric(f"MSE:", f"{pair_metrics['MSE']:.6f}")
+                with col5:
+                    if pair_metrics['Spearman'] is not None:
+                        st.metric(f"Spearman:", f"{pair_metrics['Spearman']:.3f}")
+            global_metrics = st.session_state.collector.get_latency_metrics()
+            if global_metrics:
+                st.markdown("### Websocket Metrics")
+                col1, col2 = st.columns(2)
+    
+                with col1:
+                    st.metric("Mean Latency", f"{global_metrics['mean']:.2f} ms")
+                    st.metric("Q1 (25th percentile)", f"{global_metrics['q1']:.2f} ms")
+                    st.metric("90th percentile", f"{global_metrics['p90']:.2f} ms")
+                    
+                with col2:
+                    st.metric("Median Latency", f"{global_metrics['median']:.2f} ms")
+                    st.metric("Q3 (75th percentile)", f"{global_metrics['q3']:.2f} ms")
+                    st.metric("99th percentile", f"{global_metrics['p99']:.2f} ms")
+                
+                empty_message_amount = st.session_state.collector.get_empty_message()
+                st.metric("empty message", f"{empty_message_amount}")
+                
         
         if st.checkbox("Show Raw Data"):
             st.markdown("### Raw Data")

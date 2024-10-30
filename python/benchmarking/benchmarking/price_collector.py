@@ -5,7 +5,8 @@ import time
 import threading
 from queue import Queue
 from typing import Dict
-from python.benchmarking.benchmarking.pyth_fetcher import retrieve_pyth_prices
+from pyth_fetcher import retrieve_pyth_prices
+import numpy as np
 
 
 WEBSOCKET_URL = 'wss://ws.dev.pragma.build/node/v1/data/subscribe'
@@ -18,10 +19,12 @@ SUBSCRIPTION_MESSAGE = {
 class PriceCollector:
     def __init__(self):
         self.price_history = []
+        self.update_history = []
         self.running = False
         self.thread = None
         self.lock = threading.Lock()
         self.update_queue = Queue()
+        self.empty_message = 0
 
     def decode_short_string(self, felt: str) -> str:
         try:
@@ -73,9 +76,11 @@ class PriceCollector:
                     
                     while self.running:
                         message = await websocket.recv()
+                        self.update_history.append(time.time())
                         try:
                             parsed_data = json.loads(message)
                             if 'oracle_prices' not in parsed_data:
+                                self.empty_message += 1
                                 continue
 
                             prices_updated = False
@@ -132,3 +137,28 @@ class PriceCollector:
     def get_history(self):
         with self.lock:
             return self.price_history.copy()
+    
+    def get_empty_message(self):
+        with self.lock:
+            return self.empty_message
+        
+    def get_latency_metrics(self):
+        with self.lock:
+            timestamps = self.update_history.copy()
+        
+        if len(timestamps) < 2:
+            return None
+        
+        # Compute latencies (time differences in milliseconds)
+        latency = np.diff(timestamps) * 1000  # Convert to milliseconds
+        
+        metrics = {
+            'mean': np.mean(latency),
+            'median': np.median(latency),
+            'q1': np.percentile(latency, 25),  # First quartile
+            'q3': np.percentile(latency, 75),  # Third quartile
+            'p90': np.percentile(latency, 90),  # 90th percentile
+            'p99': np.percentile(latency, 99)   # 99th percentile
+        }
+        
+        return metrics
