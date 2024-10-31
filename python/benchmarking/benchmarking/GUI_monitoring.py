@@ -5,6 +5,13 @@ import time
 from scipy import stats
 import plotly.graph_objects as go
 
+PUBLISHER_SIGNATURES = {
+    "0x624ebfb99865079bd58cfcfb925b6f5ce940d6f6e41e118b8a72b7163fb435c": "Pragma",
+    "0x04e2863fd0ff85803eef98ce5dd8272ab21c6595537269a2cd855a10ebcc18cc": "Fourleaf",
+    "0x0279fde026e3e6cceacb9c263fece0c8d66a8f59e8448f3da5a1968976841c62": "Avnu",
+    "0x009d84fae6d6a8eff16f7729e755a9084896352cae5d7f0518f43da98ff4d903": "Flowdesk"
+}
+
 st.set_page_config(
     page_title="Websocket Monitoring",
     page_icon="📈",
