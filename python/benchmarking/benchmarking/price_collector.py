@@ -149,16 +149,68 @@ class PriceCollector:
         if len(timestamps) < 2:
             return None
         
-        # Compute latencies (time differences in milliseconds)
-        latency = np.diff(timestamps) * 1000  # Convert to milliseconds
+        latency = np.diff(timestamps) * 1000
         
         metrics = {
             'mean': np.mean(latency),
             'median': np.median(latency),
-            'q1': np.percentile(latency, 25),  # First quartile
-            'q3': np.percentile(latency, 75),  # Third quartile
-            'p90': np.percentile(latency, 90),  # 90th percentile
-            'p99': np.percentile(latency, 99)   # 99th percentile
+            'q1': np.percentile(latency, 25),
+            'q3': np.percentile(latency, 75),
+            'p90': np.percentile(latency, 90),
+            'p99': np.percentile(latency, 99)
         }
         
         return metrics
+    
+    def calculate_missed_slots(self):
+        with self.lock:
+            history = self.price_history.copy()
+
+        if len(history) < 2:
+            return None
+
+        total_slots = len(history) - 1
+        missed_per_pair = {}
+        global_missed = 0
+
+        pairs = history[0]['pragma_prices'].keys()
+
+        for pair in pairs:
+            missed_per_pair[pair] = 0
+
+        for i in range(1, len(history)):
+            prev = history[i-1]['pragma_prices']
+            curr = history[i]['pragma_prices']
+            
+            for pair in pairs:
+                if pair in prev and pair in curr:
+                    if prev[pair] == curr[pair]:
+                        missed_per_pair[pair] += 1
+            
+            all_unchanged = True
+            for pair in pairs:
+                if pair in prev and pair in curr:
+                    if prev[pair] != curr[pair]:
+                        all_unchanged = False
+                        break
+            if all_unchanged:
+                global_missed += 1
+
+        ratios = {
+            'per_pair': {
+                pair: {
+                    'missed': missed,
+                    'total': total_slots,
+                    'ratio': (missed / total_slots) * 100 if total_slots > 0 else 0
+                }
+                for pair, missed in missed_per_pair.items()
+            },
+            'global': {
+                'missed': global_missed,
+                'total': total_slots,
+                'ratio': (global_missed / total_slots) * 100 if total_slots > 0 else 0
+            }
+        }
+
+        return ratios
+            

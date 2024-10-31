@@ -178,19 +178,20 @@ def main():
             if global_metrics:
                 st.markdown("### Websocket Metrics")
                 col1, col2 = st.columns(2)
+                empty_message_amount = st.session_state.collector.get_empty_message()
     
                 with col1:
                     st.metric("Mean Latency", f"{global_metrics['mean']:.2f} ms")
                     st.metric("Q1 (25th percentile)", f"{global_metrics['q1']:.2f} ms")
                     st.metric("90th percentile", f"{global_metrics['p90']:.2f} ms")
+                    st.metric("empty message", f"{empty_message_amount}")
                     
                 with col2:
                     st.metric("Median Latency", f"{global_metrics['median']:.2f} ms")
                     st.metric("Q3 (75th percentile)", f"{global_metrics['q3']:.2f} ms")
                     st.metric("99th percentile", f"{global_metrics['p99']:.2f} ms")
+                    st.metric("missed slot", f"{st.session_state.collector.calculate_missed_slots()['global']['ratio']:.2f}%")
                 
-                empty_message_amount = st.session_state.collector.get_empty_message()
-                st.metric("empty message", f"{empty_message_amount}")
                 
         
         if st.checkbox("Show Raw Data"):
@@ -199,6 +200,7 @@ def main():
     else:
         st.write("Waiting for data...")
     time.sleep(10)
+    print(st.session_state.collector.calculate_missed_slots())
     st.rerun()
 
 
