@@ -12,6 +12,14 @@ PUBLISHER_SIGNATURES = {
     "0x009d84fae6d6a8eff16f7729e755a9084896352cae5d7f0518f43da98ff4d903": "Flowdesk"
 }
 
+
+COLOR_PER_PUBLISHER = {
+    "Pragma" : 'yellow',
+    "Fourleaf" : 'orange',
+    "Avnu" : 'blue',
+    "Flowdesk" : 'white'
+}
+
 st.set_page_config(
     page_title="Websocket Monitoring",
     page_icon="📈",
@@ -22,11 +30,18 @@ def create_price_chart(history, selected_pair):
     """Create price comparison chart for selected pair"""
     times = []
     pragma_prices = []
+    publisher_prices = {}
     pyth_prices = []
     
     for entry in history:
         times.append(datetime.fromtimestamp(entry['timestamp']))
-        pragma_prices.append(entry['pragma_prices'].get(selected_pair))
+        pragma_price = entry['pragma_prices'].get(selected_pair)
+        pragma_prices.append(pragma_price["price"])
+        for price_by_src in pragma_price["component"]:
+            if PUBLISHER_SIGNATURES[price_by_src] not in publisher_prices:
+                publisher_prices[PUBLISHER_SIGNATURES[price_by_src]] = []
+            publisher_prices[PUBLISHER_SIGNATURES[price_by_src]].append(pragma_price["component"][price_by_src])
+
         pyth_prices.append(entry['pyth_prices'].get(selected_pair))
 
     fig = go.Figure()
@@ -44,6 +59,16 @@ def create_price_chart(history, selected_pair):
         name='Pyth',
         line=dict(color='red', width=2)
     ))
+
+    print("source list :")
+    for source in publisher_prices:
+        print(f"{source}")
+        fig.add_trace(go.Scatter(
+            x=times,
+            y=publisher_prices[source],
+            name=source,
+            line=dict(color=COLOR_PER_PUBLISHER[source], width=2)
+        ))
     
     fig.update_layout(
         title=f'{selected_pair} Price Comparison',
@@ -61,7 +86,7 @@ def calculate_metrics(price_history, pair):
     pragma_prices = []
     pyth_prices = []
     for entry in price_history:
-        pragma_price = entry['pragma_prices'].get(pair)
+        pragma_price = entry['pragma_prices'].get(pair)["price"]
         pyth_price = entry['pyth_prices'].get(pair)
         
         if pragma_price and pyth_price:
@@ -95,7 +120,7 @@ def print_price_update(price_entry, price_history):
     pyth_prices = price_entry.get('pyth_prices', {})
     
     for pair in sorted(pragma_prices.keys()):
-        pragma_price = pragma_prices[pair]
+        pragma_price = pragma_prices[pair]["price"]
         pyth_price = pyth_prices.get(pair)
         
         correlation, p_value, mse, n = calculate_metrics(price_history, pair)

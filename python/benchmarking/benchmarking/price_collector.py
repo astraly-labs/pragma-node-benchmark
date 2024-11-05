@@ -15,6 +15,8 @@ SUBSCRIPTION_MESSAGE = {
     'pairs': ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']
 }
 
+{'msg_type': 'subscribe','pairs': ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']}
+
 
 class PriceCollector:
     def __init__(self):
@@ -91,8 +93,15 @@ class PriceCollector:
                                 pair = self.decode_short_string(price_data['global_asset_id'])
                                 if not pair:
                                     continue
-                                    
-                                price = self.format_price(price_data['median_price'])
+
+                                price = {}     
+                                price["price"] = self.format_price(price_data['median_price'])
+                                ## add price per source
+                                price_per_source = price_data['signed_prices']
+                                component = {}
+                                for cmp in price_per_source:
+                                    component[cmp["signing_key"]] = self.format_price(cmp["oracle_price"])
+                                price["component"] = component
                                 if not price:
                                     continue
                                     
