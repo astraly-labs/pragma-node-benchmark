@@ -4,24 +4,39 @@ import websockets
 import time
 import threading
 from queue import Queue
-from typing import Dict
+from typing import Dict, List
 from pyth_fetcher import retrieve_pyth_prices
 from stork_fetcher import retrieve_stork_prices
 import numpy as np
 
-
-
-WEBSOCKET_URL = 'wss://ws.dev.pragma.build/node/v1/data/subscribe'
-SUBSCRIPTION_MESSAGE = {
-    'msg_type': 'subscribe',
-    'pairs': ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']
+# Environment configurations
+ENVIRONMENTS = {
+    'local': 'ws://localhost:3000/node/v1/data/subscribe',
+    'dev': 'wss://ws.dev.pragma.build/node/v1/data/subscribe',
+    'prod': 'wss://ws.pragma.build/node/v1/data/subscribe'
 }
 
-{'msg_type': 'subscribe','pairs': ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']}
-
+DEFAULT_PAIRS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']
 
 class PriceCollector:
-    def __init__(self):
+    def __init__(self, env: str = 'dev', pairs: List[str] = None):
+        """
+        Initialize PriceCollector with environment and pairs configuration
+        
+        Args:
+            env: Environment to connect to ('local', 'dev', or 'prod')
+            pairs: List of trading pairs to subscribe to. If None, uses DEFAULT_PAIRS
+        """
+        if env not in ENVIRONMENTS:
+            raise ValueError(f"Environment must be one of: {', '.join(ENVIRONMENTS.keys())}")
+        
+        self.websocket_url = ENVIRONMENTS[env]
+        self.pairs = pairs if pairs is not None else DEFAULT_PAIRS
+        self.subscription_message = {
+            'msg_type': 'subscribe',
+            'pairs': self.pairs
+        }
+        
         self.price_history = []
         self.update_history = []
         self.running = False
@@ -81,9 +96,9 @@ class PriceCollector:
         
         while self.running:
             try:
-                async with websockets.connect(WEBSOCKET_URL) as websocket:
-                    print("WebSocket connection established")
-                    await websocket.send(json.dumps(SUBSCRIPTION_MESSAGE))
+                async with websockets.connect(self.websocket_url) as websocket:
+                    print(f"WebSocket connection established to {self.websocket_url}")
+                    await websocket.send(json.dumps(self.subscription_message))
                     
                     while self.running:
                         message = await websocket.recv()
@@ -105,6 +120,7 @@ class PriceCollector:
 
                                 price = {}     
                                 price["price"] = self.format_price(price_data['median_price'])
+                                print(price)
                                 ## add price per source
                                 price_per_source = price_data['signed_prices']
                                 component = {}
@@ -231,4 +247,3 @@ class PriceCollector:
         }
 
         return ratios
-            
