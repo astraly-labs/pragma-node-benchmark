@@ -5,8 +5,10 @@ import time
 from scipy import stats
 import plotly.graph_objects as go
 
+CURRENT_ENV = 'local'
+
 PUBLISHER_SIGNATURES = {
-    "0x624ebfb99865079bd58cfcfb925b6f5ce940d6f6e41e118b8a72b7163fb435c": "Pragma",
+    "0x624EBFB99865079BD58CFCFB925B6F5CE940D6F6E41E118B8A72B7163FB435C": "Pragma",
     "0x04e2863fd0ff85803eef98ce5dd8272ab21c6595537269a2cd855a10ebcc18cc": "Fourleaf",
     "0x0279fde026e3e6cceacb9c263fece0c8d66a8f59e8448f3da5a1968976841c62": "Avnu",
     "0x009d84fae6d6a8eff16f7729e755a9084896352cae5d7f0518f43da98ff4d903": "Flowdesk"
@@ -95,27 +97,36 @@ def calculate_metrics(price_history, pair):
     stork_prices = []
     
     for entry in price_history:
-        pragma_price = entry['pragma_prices'].get(pair)["price"]
+        pragma_price = entry['pragma_prices'].get(pair)
+        if pragma_price and isinstance(pragma_price, dict) and "price" in pragma_price:
+            pragma_price = pragma_price["price"]
         pyth_price = entry['pyth_prices'].get(pair)
-        stork_price = entry['stork_prices'].get(pair)
+        stork_price = entry.get('stork_prices', {}).get(pair)
         
-        if pragma_price and pyth_price and stork_price:
+        if pragma_price and pyth_price:
             pragma_prices.append(pragma_price)
             pyth_prices.append(pyth_price)
-            stork_prices.append(stork_price)
+            if stork_price:
+                stork_prices.append(stork_price)
     
     metrics = {}
     
     # Calculate metrics for Pyth
     if len(pragma_prices) > 1 and len(pyth_prices) > 1:
         pyth_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, pyth_prices)]) / len(pragma_prices)
-        pyth_correlation, _ = stats.spearmanr(pragma_prices, pyth_prices)
+        if len(set(pragma_prices)) > 1 and len(set(pyth_prices)) > 1:
+            pyth_correlation, _ = stats.spearmanr(pragma_prices, pyth_prices)
+        else:
+            pyth_correlation = None
         metrics['pyth'] = {'mse': pyth_mse, 'correlation': pyth_correlation}
     
     # Calculate metrics for Stork
     if len(pragma_prices) > 1 and len(stork_prices) > 1:
         stork_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, stork_prices)]) / len(pragma_prices)
-        stork_correlation, _ = stats.spearmanr(pragma_prices, stork_prices)
+        if len(set(pragma_prices)) > 1 and len(set(stork_prices)) > 1:
+            stork_correlation, _ = stats.spearmanr(pragma_prices, stork_prices)
+        else:
+            stork_correlation = None
         metrics['stork'] = {'mse': stork_mse, 'correlation': stork_correlation}
     
     return metrics
@@ -124,37 +135,46 @@ def print_price_update(price_entry, price_history):
     if not price_entry:
         return
     data_per_pair = {}
-        
-    print("\nNew price update:")
-    print(f"Timestamp: {time.ctime(price_entry['timestamp'])}")
     
     pragma_prices = price_entry.get('pragma_prices', {})
     pyth_prices = price_entry.get('pyth_prices', {})
+    stork_prices = price_entry.get('stork_prices', {})
     
     for pair in sorted(pragma_prices.keys()):
-        pragma_price = pragma_prices[pair]["price"]
-        pyth_price = pyth_prices.get(pair)
-        
-        correlation, p_value, mse, n = calculate_metrics(price_history, pair)
-        
-        if pyth_price:
-            delta = ((pragma_price - pyth_price) * 100) / pragma_price
-            metrics = []
-            if correlation is not None:
-                metrics.append(f"Spearman: {correlation:.3f}")
-            if mse is not None:
-                metrics.append(f"MSE: {mse:.6f}")
-            metrics_str = f", {', '.join(metrics)}" if metrics else ""
-            print(pair)
-            print(f"{pair} => Pragma: ${pragma_price:,.2f}, Pyth: ${pyth_price:,.2f}, Delta: {delta:+.2f}%{metrics_str}")
-            data_per_pair[pair] = {"Pragma": pragma_price, "Pyth": pyth_price, "Delta" : delta, "MSE" : mse, "Spearman": correlation }
+        pragma_data = pragma_prices[pair]
+        if isinstance(pragma_data, dict) and "price" in pragma_data:
+            pragma_price = pragma_data["price"]
         else:
-            print(f"{pair} => Pragma: ${pragma_price:,.2f}, Pyth: No data, Delta: Cannot calculate")
+            pragma_price = pragma_data
+            
+        pyth_price = pyth_prices.get(pair)
+        stork_price = stork_prices.get(pair)
+        
+        metrics = calculate_metrics(price_history, pair)
+        
+        data_per_pair[pair] = {
+            "Pragma": pragma_price,
+            "Pyth": pyth_price,
+            "Stork": stork_price
+        }
+        
+        if metrics.get('pyth'):
+            data_per_pair[pair].update({
+                "Pyth_MSE": metrics['pyth']['mse'],
+                "Pyth_Correlation": metrics['pyth']['correlation']
+            })
+        
+        if metrics.get('stork'):
+            data_per_pair[pair].update({
+                "Stork_MSE": metrics['stork']['mse'],
+                "Stork_Correlation": metrics['stork']['correlation']
+            })
+    
     return data_per_pair
 
 
 if 'collector' not in st.session_state:
-    st.session_state.collector = PriceCollector()
+    st.session_state.collector = PriceCollector(env=CURRENT_ENV)
     st.session_state.collector.start()
     print("Price collector initialized and started")  # Debug print
 
@@ -207,7 +227,7 @@ def main():
                 latest_stork = latest['stork_prices'].get(selected_pair)
                 
                 col1, col2, col3 = st.columns(3)
-                
+
                 with col1:
                     st.metric("Pragma", f"${latest_pragma:,.2f}")
                 with col2:
@@ -226,11 +246,17 @@ def main():
                 with col1:
                     if 'pyth' in metrics:
                         st.metric("Pyth MSE", f"{metrics['pyth']['mse']:.6f}")
-                        st.metric("Pyth Correlation", f"{metrics['pyth']['correlation']:.3f}")
+                        if metrics['pyth']['correlation'] is not None:
+                            st.metric("Pyth Correlation", f"{metrics['pyth']['correlation']:.3f}")
+                        else:
+                            st.metric("Pyth Correlation", "N/A")
                 with col2:
                     if 'stork' in metrics:
                         st.metric("Stork MSE", f"{metrics['stork']['mse']:.6f}")
-                        st.metric("Stork Correlation", f"{metrics['stork']['correlation']:.3f}")
+                        if metrics['stork']['correlation'] is not None:
+                            st.metric("Stork Correlation", f"{metrics['stork']['correlation']:.3f}")
+                        else:
+                            st.metric("Stork Correlation", "N/A")
             global_metrics = st.session_state.collector.get_latency_metrics()
             if global_metrics:
                 st.markdown("### Websocket Metrics")
