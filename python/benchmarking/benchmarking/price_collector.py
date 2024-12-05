@@ -6,7 +6,9 @@ import threading
 from queue import Queue
 from typing import Dict
 from pyth_fetcher import retrieve_pyth_prices
+from stork_fetcher import retrieve_stork_prices
 import numpy as np
+
 
 
 WEBSOCKET_URL = 'wss://ws.dev.pragma.build/node/v1/data/subscribe'
@@ -48,16 +50,23 @@ class PriceCollector:
     async def update_price_history(self, pragma_prices: Dict[str, float]) -> None:
         try:
             pyth_raw_prices = await retrieve_pyth_prices()
+            stork_raw_prices = await retrieve_stork_prices()
             
             if pyth_raw_prices:
                 pyth_prices = {}
                 for pair, price in pyth_raw_prices.items():
                     pyth_prices[pair] = price
 
+                stork_prices = {}
+                if stork_raw_prices:
+                    for pair, price in stork_raw_prices.items():
+                        stork_prices[pair] = price
+
                 price_entry = {
                     'timestamp': time.time(),
                     'pragma_prices': pragma_prices.copy(),
-                    'pyth_prices': pyth_prices
+                    'pyth_prices': pyth_prices,
+                    'stork_prices': stork_prices
                 }
 
                 with self.lock:

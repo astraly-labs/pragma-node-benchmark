@@ -32,6 +32,7 @@ def create_price_chart(history, selected_pair):
     pragma_prices = []
     publisher_prices = {}
     pyth_prices = []
+    stork_prices = []
     
     for entry in history:
         times.append(datetime.fromtimestamp(entry['timestamp']))
@@ -43,6 +44,7 @@ def create_price_chart(history, selected_pair):
             publisher_prices[PUBLISHER_SIGNATURES[price_by_src]].append(pragma_price["component"][price_by_src])
 
         pyth_prices.append(entry['pyth_prices'].get(selected_pair))
+        stork_prices.append(entry['stork_prices'].get(selected_pair))
 
     fig = go.Figure()
     
@@ -60,16 +62,21 @@ def create_price_chart(history, selected_pair):
         line=dict(color='red', width=2)
     ))
 
-    print("source list :")
+    fig.add_trace(go.Scatter(
+        x=times,
+        y=stork_prices,
+        name='Stork',
+        line=dict(color='purple', width=2)
+    ))
+
     for source in publisher_prices:
-        print(f"{source}")
         fig.add_trace(go.Scatter(
             x=times,
             y=publisher_prices[source],
             name=source,
             line=dict(color=COLOR_PER_PUBLISHER[source], width=2)
         ))
-    
+
     fig.update_layout(
         title=f'{selected_pair} Price Comparison',
         xaxis_title='Time',
@@ -85,28 +92,33 @@ def calculate_metrics(price_history, pair):
     """Calculate Spearman correlation and MSE for a specific pair"""
     pragma_prices = []
     pyth_prices = []
+    stork_prices = []
+    
     for entry in price_history:
         pragma_price = entry['pragma_prices'].get(pair)["price"]
         pyth_price = entry['pyth_prices'].get(pair)
+        stork_price = entry['stork_prices'].get(pair)
         
-        if pragma_price and pyth_price:
+        if pragma_price and pyth_price and stork_price:
             pragma_prices.append(pragma_price)
             pyth_prices.append(pyth_price)
+            stork_prices.append(stork_price)
     
-    # Calculate MSE
-    mse = None
-    if pragma_prices and pyth_prices:
-        squared_diff = [(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, pyth_prices)]
-        mse = sum(squared_diff) / len(squared_diff)
+    metrics = {}
     
-    # Calculate Spearman
-    correlation = None
-    p_value = None
-    if len(pragma_prices) > 1:
-        if len(set(pragma_prices)) > 1 and len(set(pyth_prices)) > 1:
-            correlation, p_value = stats.spearmanr(pragma_prices, pyth_prices)
+    # Calculate metrics for Pyth
+    if len(pragma_prices) > 1 and len(pyth_prices) > 1:
+        pyth_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, pyth_prices)]) / len(pragma_prices)
+        pyth_correlation, _ = stats.spearmanr(pragma_prices, pyth_prices)
+        metrics['pyth'] = {'mse': pyth_mse, 'correlation': pyth_correlation}
     
-    return correlation, p_value, mse, len(pragma_prices)
+    # Calculate metrics for Stork
+    if len(pragma_prices) > 1 and len(stork_prices) > 1:
+        stork_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, stork_prices)]) / len(pragma_prices)
+        stork_correlation, _ = stats.spearmanr(pragma_prices, stork_prices)
+        metrics['stork'] = {'mse': stork_mse, 'correlation': stork_correlation}
+    
+    return metrics
 
 def print_price_update(price_entry, price_history):
     if not price_entry:
@@ -186,26 +198,39 @@ def main():
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            metrics = print_price_update(latest, history)
-            if metrics and selected_pair in metrics:
-                pair_metrics = metrics[selected_pair]
+            metrics = calculate_metrics(history, selected_pair)
+            if metrics:
                 st.markdown(f"### Current Metrics for {selected_pair}")
-                col1, col2 = st.columns(2)
+                
+                latest_pragma = latest['pragma_prices'][selected_pair]["price"]
+                latest_pyth = latest['pyth_prices'].get(selected_pair)
+                latest_stork = latest['stork_prices'].get(selected_pair)
+                
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    st.metric(f"Pragma:", f"${pair_metrics['Pragma']:,.2f}")
+                    st.metric("Pragma", f"${latest_pragma:,.2f}")
                 with col2:
-                    st.metric(f"Pyth:",f"${pair_metrics['Pyth']:,.2f}")
-                
-                col3,col4,col5 = st.columns(3)
+                    if latest_pyth:
+                        pyth_delta = ((latest_pragma - latest_pyth) * 100) / latest_pragma
+                        st.metric("Pyth", f"${latest_pyth:,.2f}", f"{pyth_delta:+.2f}%")
                 with col3:
-                    st.metric(f"Delta:", f"{pair_metrics['Delta']:+.2f}%")
-                with col4:
-                    if pair_metrics['MSE'] is not None:
-                        st.metric(f"MSE:", f"{pair_metrics['MSE']:.6f}")
-                with col5:
-                    if pair_metrics['Spearman'] is not None:
-                        st.metric(f"Spearman:", f"{pair_metrics['Spearman']:.3f}")
+                    if latest_stork:
+                        stork_delta = ((latest_pragma - latest_stork) * 100) / latest_pragma
+                        st.metric("Stork", f"${latest_stork:,.2f}", f"{stork_delta:+.2f}%")
+                
+                st.divider()
+                st.markdown("### Statistical Metrics")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if 'pyth' in metrics:
+                        st.metric("Pyth MSE", f"{metrics['pyth']['mse']:.6f}")
+                        st.metric("Pyth Correlation", f"{metrics['pyth']['correlation']:.3f}")
+                with col2:
+                    if 'stork' in metrics:
+                        st.metric("Stork MSE", f"{metrics['stork']['mse']:.6f}")
+                        st.metric("Stork Correlation", f"{metrics['stork']['correlation']:.3f}")
             global_metrics = st.session_state.collector.get_latency_metrics()
             if global_metrics:
                 st.markdown("### Websocket Metrics")

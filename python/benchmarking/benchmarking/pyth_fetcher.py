@@ -98,3 +98,17 @@ async def retrieve_pyth_prices() -> Optional[Dict[str, float]]:
     except Exception as e:
         print(f'Error fetching data: {e}')
         return None
+    
+if __name__ == "__main__":
+    import asyncio
+    
+    async def main():
+        prices = await retrieve_pyth_prices()
+        if prices:
+            print("\nCurrent Pyth prices:")
+            for pair, price in prices.items():
+                print(f"{pair}: ${price:,.2f}")
+        else:
+            print("Failed to retrieve Pyth prices")
+
+    asyncio.run(main())
