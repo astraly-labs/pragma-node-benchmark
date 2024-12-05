@@ -4,7 +4,6 @@ import websockets
 import time
 import threading
 from queue import Queue
-from typing import Dict, List
 from pyth_fetcher import retrieve_pyth_prices
 from stork_fetcher import retrieve_stork_prices
 import numpy as np
@@ -19,31 +18,23 @@ ENVIRONMENTS = {
 DEFAULT_PAIRS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD']
 
 class PriceCollector:
-    def __init__(self, env: str = 'dev', pairs: List[str] = None):
-        """
-        Initialize PriceCollector with environment and pairs configuration
-        
-        Args:
-            env: Environment to connect to ('local', 'dev', or 'prod')
-            pairs: List of trading pairs to subscribe to. If None, uses DEFAULT_PAIRS
-        """
-        if env not in ENVIRONMENTS:
-            raise ValueError(f"Environment must be one of: {', '.join(ENVIRONMENTS.keys())}")
-        
-        self.websocket_url = ENVIRONMENTS[env]
-        self.pairs = pairs if pairs is not None else DEFAULT_PAIRS
-        self.subscription_message = {
-            'msg_type': 'subscribe',
-            'pairs': self.pairs
-        }
-        
+    def __init__(self, env='local'):
+        self.running = False
         self.price_history = []
         self.update_history = []
-        self.running = False
-        self.thread = None
-        self.lock = threading.Lock()
+        self.empty_message_count = 0
+        self.lock = asyncio.Lock()
         self.update_queue = Queue()
-        self.empty_message = 0
+        self.websocket_url = ENVIRONMENTS[env]
+        self.subscription_message = {"msg_type": "subscribe", "pairs": DEFAULT_PAIRS}
+        
+        # Store latest prices from each source
+        self.latest_prices = {
+            'pragma': {},
+            'pyth': {},
+            'stork': {},
+            'timestamp': None
+        }
 
     def decode_short_string(self, felt: str) -> str:
         try:
@@ -62,38 +53,33 @@ class PriceCollector:
         except Exception as e:
             return None
 
-    async def update_price_history(self, pragma_prices: Dict[str, float]) -> None:
-        try:
-            pyth_raw_prices = await retrieve_pyth_prices()
-            stork_raw_prices = await retrieve_stork_prices()
-            
-            if pyth_raw_prices:
-                pyth_prices = {}
-                for pair, price in pyth_raw_prices.items():
-                    pyth_prices[pair] = price
+    async def fetch_pyth_prices(self):
+        while self.running:
+            try:
+                prices = await retrieve_pyth_prices()
+                if prices:
+                    async with self.lock:
+                        self.latest_prices['pyth'] = prices
+                        self.latest_prices['timestamp'] = time.time()
+                        self._update_price_history()
+            except Exception as e:
+                print(f"Error fetching Pyth prices: {e}")
+            await asyncio.sleep(1)  # Adjust rate limiting as needed
 
-                stork_prices = {}
-                if stork_raw_prices:
-                    for pair, price in stork_raw_prices.items():
-                        stork_prices[pair] = price
+    async def fetch_stork_prices(self):
+        while self.running:
+            try:
+                prices = await retrieve_stork_prices()
+                if prices:
+                    async with self.lock:
+                        self.latest_prices['stork'] = prices
+                        self.latest_prices['timestamp'] = time.time()
+                        self._update_price_history()
+            except Exception as e:
+                print(f"Error fetching Stork prices: {e}")
+            await asyncio.sleep(1)  # Adjust rate limiting as needed
 
-                price_entry = {
-                    'timestamp': time.time(),
-                    'pragma_prices': pragma_prices.copy(),
-                    'pyth_prices': pyth_prices,
-                    'stork_prices': stork_prices
-                }
-
-                with self.lock:
-                    self.price_history.append(price_entry)
-                self.update_queue.put(price_entry)
-
-        except Exception as e:
-            print(f'Error updating price history: {e}')
-
-    async def websocket_client(self):
-        current_pragma_prices: Dict[str, float] = {}
-        
+    async def fetch_pragma_prices(self):
         while self.running:
             try:
                 async with websockets.connect(self.websocket_url) as websocket:
@@ -106,79 +92,87 @@ class PriceCollector:
                         try:
                             parsed_data = json.loads(message)
                             if 'oracle_prices' not in parsed_data:
-                                self.empty_message += 1
+                                self.empty_message_count += 1
                                 continue
 
-                            prices_updated = False
+                            prices = {}
                             for price_data in parsed_data['oracle_prices']:
-                                if 'global_asset_id' not in price_data or 'median_price' not in price_data:
-                                    continue
-                                    
                                 pair = self.decode_short_string(price_data['global_asset_id'])
                                 if not pair:
                                     continue
-
-                                price = {}     
-                                price["price"] = self.format_price(price_data['median_price'])
-                                print(price)
-                                ## add price per source
-                                price_per_source = price_data['signed_prices']
-                                component = {}
-                                for cmp in price_per_source:
-                                    component[cmp["signing_key"]] = self.format_price(cmp["oracle_price"])
-                                price["component"] = component
-                                if not price:
-                                    continue
-                                    
-                                current_pragma_prices[pair] = price
-                                prices_updated = True
-                            
-                            if prices_updated:
-                                await self.update_price_history(current_pragma_prices)
                                 
-                        except json.JSONDecodeError as e:
-                            print(f'Error parsing JSON message: {e}')
+                                price = {
+                                    "price": self.format_price(price_data['median_price']),
+                                    "component": {
+                                        cmp["signing_key"]: self.format_price(cmp["oracle_price"])
+                                        for cmp in price_data.get('price_per_source', [])
+                                    }
+                                }
+                                prices[pair] = price
+
+                            async with self.lock:
+                                self.latest_prices['pragma'] = prices
+                                self.latest_prices['timestamp'] = time.time()
+                                self._update_price_history()
+
                         except Exception as e:
-                            print(f'Error processing message: {e}')
-                        
-            except websockets.exceptions.ConnectionClosed:
-                if self.running:
-                    print("Connection closed. Reconnecting in 5 seconds...")
-                    await asyncio.sleep(5)
-                
+                            print(f"Error processing Pragma message: {e}")
+
             except Exception as e:
-                if self.running:
-                    print(f"WebSocket error: {e}")
-                    await asyncio.sleep(5)
+                print(f"WebSocket error: {e}")
+                await asyncio.sleep(5)
+
+    def _update_price_history(self):
+        """Create a new price entry from latest prices and add to history"""
+        # Only update if we have pragma prices (our primary source)
+        if not self.latest_prices['pragma']:
+            return
+
+        price_entry = {
+            'timestamp': self.latest_prices['timestamp'] or time.time(),
+            'pragma_prices': self.latest_prices['pragma'].copy(),
+            'pyth_prices': self.latest_prices['pyth'].copy(),
+            'stork_prices': self.latest_prices['stork'].copy()
+        }
+        
+        self.price_history.append(price_entry)
+        self.update_queue.put(price_entry)
+
+    async def run_all_fetchers(self):
+        """Run all price fetchers concurrently"""
+        await asyncio.gather(
+            self.fetch_pragma_prices(),
+            self.fetch_pyth_prices(),
+            self.fetch_stork_prices()
+        )
 
     def run_async_loop(self):
-        asyncio.run(self.websocket_client())
+        asyncio.run(self.run_all_fetchers())
 
     def start(self):
+        """Start the price collector in a separate thread"""
         if not self.running:
             self.running = True
-            self.thread = threading.Thread(target=self.run_async_loop)
-            self.thread.start()
-            print("Price collector started")
+            self.collector_thread = threading.Thread(target=self.run_async_loop)
+            self.collector_thread.daemon = True
+            self.collector_thread.start()
 
     def stop(self):
         if self.running:
             self.running = False
-            if self.thread:
-                self.thread.join()
+            if self.collector_thread:
+                self.collector_thread.join()
             print("Price collector stopped")
 
     def get_history(self):
-        with self.lock:
-            return self.price_history.copy()
+        """Thread-safe way to get price history"""
+        return self.price_history.copy() if self.price_history else []
     
     def get_empty_message(self):
-        with self.lock:
-            return self.empty_message
+        return self.empty_message_count
         
     def get_latency_metrics(self):
-        with self.lock:
-            timestamps = self.update_history.copy()
+        timestamps = self.update_history.copy()
         
         if len(timestamps) < 2:
             return None
@@ -197,8 +191,7 @@ class PriceCollector:
         return metrics
     
     def calculate_missed_slots(self):
-        with self.lock:
-            history = self.price_history.copy()
+        history = self.price_history.copy()
 
         if len(history) < 2:
             return None
@@ -247,3 +240,25 @@ class PriceCollector:
         }
 
         return ratios
+
+def main():
+    collector = PriceCollector('local')
+    print("Starting price collector...")
+    try:
+        collector.start()
+        print("Price collector started successfully")
+        print("Press Ctrl+C to stop")
+        while True:
+            time.sleep(1)
+            history = collector.get_history()
+            if history:
+                latest = history[-1]
+                print(latest)
+    except KeyboardInterrupt:
+        collector.stop()
+        print("\nStopped price collection")
+        print("Final price history length:", len(collector.get_history()))
+
+if __name__ == "__main__":
+    main()
+
