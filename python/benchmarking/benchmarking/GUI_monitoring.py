@@ -237,15 +237,26 @@ def main():
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    st.metric("Pragma", f"${latest_pragma:,.2f}")
+                    st.markdown("#### Pragma")
+                    st.markdown(f"<h2>${latest_pragma:,.2f}</h2>", unsafe_allow_html=True)
+
                 with col2:
+                    st.markdown("#### Pyth")
                     if latest_pyth:
-                        pyth_delta = ((latest_pragma - latest_pyth) * 100) / latest_pragma
-                        st.metric("Pyth", f"${latest_pyth:,.2f}", f"{pyth_delta:+.2f}%")
+                        pyth_delta = ((latest_pyth - latest_pragma) * 100) / latest_pragma
+                        st.markdown(f"<h2>${latest_pyth:,.2f}</h2>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='color: {'red' if pyth_delta < 0 else 'green'}'>{pyth_delta:+.2f}%</p>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("No data")
+
                 with col3:
+                    st.markdown("#### Stork")
                     if latest_stork:
-                        stork_delta = ((latest_pragma - latest_stork) * 100) / latest_pragma
-                        st.metric("Stork", f"${latest_stork:,.2f}", f"{stork_delta:+.2f}%")
+                        stork_delta = ((latest_stork - latest_pragma) * 100) / latest_pragma
+                        st.markdown(f"<h2>${latest_stork:,.2f}</h2>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='color: {'red' if stork_delta < 0 else 'green'}'>{stork_delta:+.2f}%</p>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("No data")
                 
                 st.divider()
                 st.markdown("### Statistical Metrics")
