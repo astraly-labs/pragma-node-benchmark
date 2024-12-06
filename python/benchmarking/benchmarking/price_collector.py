@@ -99,21 +99,32 @@ class PriceCollector:
                             for price_data in parsed_data['oracle_prices']:
                                 pair = self.decode_short_string(price_data['global_asset_id'])
                                 if not pair:
+                                    # use previous price
+                                    prices[pair] = self.latest_prices['pragma'][pair]
                                     continue
                                 
-                                price = {
-                                    "price": self.format_price(price_data['median_price']),
-                                    "component": {
-                                        cmp["signing_key"]: self.format_price(cmp["oracle_price"])
-                                        for cmp in price_data.get('price_per_source', [])
-                                    }
+                                price_value = self.format_price(price_data['median_price'])
+                                if price_value is None:  # Skip if price is None
+                                    # use previous price
+                                    prices[pair] = self.latest_prices['pragma'][pair]
+                                    continue
+                                
+                                component_prices = {}
+                                for cmp in price_data.get('price_per_source', []):
+                                    comp_price = self.format_price(cmp["oracle_price"])
+                                    if comp_price is not None:  # Only add valid component prices
+                                        component_prices[cmp["signing_key"]] = comp_price
+                                
+                                prices[pair] = {
+                                    "price": price_value,
+                                    "component": component_prices
                                 }
-                                prices[pair] = price
 
-                            async with self.lock:
-                                self.latest_prices['pragma'] = prices
-                                self.latest_prices['timestamp'] = time.time()
-                                self._update_price_history()
+                            if len(prices.keys()) > 0:  # Only update if we have prices
+                                async with self.lock:
+                                    self.latest_prices['pragma'] = prices
+                                    self.latest_prices['timestamp'] = time.time()
+                                    self._update_price_history()
 
                         except Exception as e:
                             print(f"Error processing Pragma message: {e}")

@@ -97,34 +97,42 @@ def calculate_metrics(price_history, pair):
     stork_prices = []
     
     for entry in price_history:
-        pragma_price = entry['pragma_prices'].get(pair)
-        if pragma_price and isinstance(pragma_price, dict) and "price" in pragma_price:
-            pragma_price = pragma_price["price"]
+        pragma_data = entry['pragma_prices'].get(pair)
+        if pragma_data and isinstance(pragma_data, dict) and "price" in pragma_data:
+            pragma_price = pragma_data.get('price')
+        else:
+            continue  # Skip if no valid pragma price
+            
         pyth_price = entry['pyth_prices'].get(pair)
-        stork_price = entry.get('stork_prices', {}).get(pair)
+        stork_price = entry['stork_prices'].get(pair)
         
-        if pragma_price and pyth_price:
-            pragma_prices.append(pragma_price)
-            pyth_prices.append(pyth_price)
-            if stork_price:
+        if pragma_price is not None:
+            # Only append prices when we have matching pairs
+            if pyth_price is not None:
+                pragma_prices.append(pragma_price)
+                pyth_prices.append(pyth_price)
+            if stork_price is not None:
+                if len(pragma_prices) < len(pyth_prices):
+                    pragma_prices.append(pragma_price)
                 stork_prices.append(stork_price)
     
     metrics = {}
     
-    # Calculate metrics for Pyth
+    # Calculate Pyth metrics
     if len(pragma_prices) > 1 and len(pyth_prices) > 1:
-        pyth_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, pyth_prices)]) / len(pragma_prices)
-        if len(set(pragma_prices)) > 1 and len(set(pyth_prices)) > 1:
-            pyth_correlation, _ = stats.spearmanr(pragma_prices, pyth_prices)
+        pyth_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices[:len(pyth_prices)], pyth_prices)]) / len(pyth_prices)
+        if len(set(pragma_prices[:len(pyth_prices)])) > 1 and len(set(pyth_prices)) > 1:
+            pyth_correlation, _ = stats.spearmanr(pragma_prices[:len(pyth_prices)], pyth_prices)
         else:
             pyth_correlation = None
         metrics['pyth'] = {'mse': pyth_mse, 'correlation': pyth_correlation}
     
-    # Calculate metrics for Stork
+    # Calculate Stork metrics
     if len(pragma_prices) > 1 and len(stork_prices) > 1:
-        stork_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices, stork_prices)]) / len(pragma_prices)
-        if len(set(pragma_prices)) > 1 and len(set(stork_prices)) > 1:
-            stork_correlation, _ = stats.spearmanr(pragma_prices, stork_prices)
+        min_len = min(len(pragma_prices), len(stork_prices))
+        stork_mse = sum([(p1 - p2) ** 2 for p1, p2 in zip(pragma_prices[:min_len], stork_prices[:min_len])]) / min_len
+        if len(set(pragma_prices[:min_len])) > 1 and len(set(stork_prices[:min_len])) > 1:
+            stork_correlation, _ = stats.spearmanr(pragma_prices[:min_len], stork_prices[:min_len])
         else:
             stork_correlation = None
         metrics['stork'] = {'mse': stork_mse, 'correlation': stork_correlation}
