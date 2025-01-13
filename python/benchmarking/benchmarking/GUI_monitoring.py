@@ -5,7 +5,7 @@ import time
 from scipy import stats
 import plotly.graph_objects as go
 
-CURRENT_ENV = 'local'
+CURRENT_ENV = 'dev'
 
 PUBLISHER_SIGNATURES = {
     "0x624EBFB99865079BD58CFCFB925B6F5CE940D6F6E41E118B8A72B7163FB435C": "Pragma",

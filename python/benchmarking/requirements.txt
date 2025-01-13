@@ -1,0 +1,7 @@
+streamlit==1.39.0
+aiohttp==3.9.1
+websockets==12.0
+plotly==5.24.1
+scipy==1.11.4
+numpy==1.26.2
+x10-python-trading>=0.3.0 

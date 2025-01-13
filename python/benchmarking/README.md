@@ -2,6 +2,14 @@
 
 A comprehensive tool for monitoring and benchmarking Pragma Oracle Node performance against other price feeds (Pyth, Stork).
 
+## System Requirements 🖥️
+
+- Python >=3.10
+- GMP (GNU Multiple Precision Arithmetic Library)
+  - On macOS: `brew install gmp`
+  - On Ubuntu/Debian: `sudo apt-get install libgmp-dev`
+  - On Fedora/RHEL: `sudo dnf install gmp-devel`
+
 ## Features ✨
 
 - **Real-time Price Monitoring**: Concurrent tracking of prices from multiple sources
@@ -22,20 +30,25 @@ A comprehensive tool for monitoring and benchmarking Pragma Oracle Node performa
 
 ## Quick Start 🏃‍♂️
 
-1. Clone the repository and set up your virtual environment:
+1. Clone the repository:
 ```bash
 git clone https://github.com/your-repo/pragma-node-benchmark
 cd pragma-node-benchmark/python/benchmarking
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-2. Install dependencies:
+2. Install uv (if not already installed):
 ```bash
-pip install -r requirements.txt
+pip install uv
 ```
 
-3. Run the GUI dashboard:
+3. Create virtual environment and install dependencies:
+```bash
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
+```
+
+4. Run the GUI dashboard:
 ```bash
 streamlit run benchmarking/GUI_monitoring.py
 ```
