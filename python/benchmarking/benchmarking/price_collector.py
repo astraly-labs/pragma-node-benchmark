@@ -91,6 +91,8 @@ class PriceCollector:
                         self.update_history.append(time.time())
                         try:
                             parsed_data = json.loads(message)
+                            print("\n=== Raw Message ===")
+                            print(json.dumps(parsed_data, indent=2))
                             if 'oracle_prices' not in parsed_data:
                                 self.empty_message_count += 1
                                 continue
@@ -98,6 +100,8 @@ class PriceCollector:
                             prices = {}
                             for price_data in parsed_data['oracle_prices']:
                                 pair = self.decode_short_string(price_data['global_asset_id'])
+                                print(f"\nProcessing pair: {pair}")
+                                print(f"Price data: {json.dumps(price_data, indent=2)}")
                                 if not pair:
                                     # use previous price
                                     prices[pair] = self.latest_prices['pragma'][pair]
@@ -110,11 +114,15 @@ class PriceCollector:
                                     continue
                                 
                                 component_prices = {}
-                                for cmp in price_data.get('price_per_source', []):
+                                print("\nLooking for component prices...")
+                                print(f"Available fields: {price_data.keys()}")
+                                for cmp in price_data.get('signed_prices', []):
+                                    print(f"Processing component: {cmp}")
                                     comp_price = self.format_price(cmp["oracle_price"])
                                     if comp_price is not None:  # Only add valid component prices
                                         component_prices[cmp["signing_key"]] = comp_price
                                 
+                                print(f"Collected component prices: {component_prices}")
                                 prices[pair] = {
                                     "price": price_value,
                                     "component": component_prices

@@ -31,32 +31,58 @@ st.set_page_config(
 def create_price_chart(history, selected_pair):
     """Create price comparison chart for selected pair"""
     times = []
-    pragma_prices = []
+    median_prices = []
     publisher_prices = {}
     pyth_prices = []
     stork_prices = []
     
+    print("\n=== Debug: Price Data ===")
     for entry in history:
         times.append(datetime.fromtimestamp(entry['timestamp']))
-        pragma_price = entry['pragma_prices'].get(selected_pair)
-        pragma_prices.append(pragma_price["price"])
-        for price_by_src in pragma_price["component"]:
-            if PUBLISHER_SIGNATURES[price_by_src] not in publisher_prices:
-                publisher_prices[PUBLISHER_SIGNATURES[price_by_src]] = []
-            publisher_prices[PUBLISHER_SIGNATURES[price_by_src]].append(pragma_price["component"][price_by_src])
+        pragma_data = entry['pragma_prices'].get(selected_pair)
+        print(f"\nTimestamp: {datetime.fromtimestamp(entry['timestamp'])}")
+        print(f"Pragma Data: {pragma_data}")
+        
+        # Store median price
+        median_prices.append(pragma_data["price"])
+        
+        # Store individual publisher prices
+        if "component" in pragma_data:
+            print(f"Component prices: {pragma_data['component']}")
+            for publisher_key, price in pragma_data["component"].items():
+                publisher_name = PUBLISHER_SIGNATURES[publisher_key]
+                print(f"Publisher: {publisher_name}, Key: {publisher_key}, Price: {price}")
+                if publisher_name not in publisher_prices:
+                    publisher_prices[publisher_name] = []
+                publisher_prices[publisher_name].append(price)
 
         pyth_prices.append(entry['pyth_prices'].get(selected_pair))
         stork_prices.append(entry['stork_prices'].get(selected_pair))
+    
+    print("\nPublisher prices collected:")
+    for pub, prices in publisher_prices.items():
+        print(f"{pub}: {len(prices)} prices")
 
     fig = go.Figure()
     
+    # Add individual publisher traces first
+    for publisher_name, prices in publisher_prices.items():
+        fig.add_trace(go.Scatter(
+            x=times,
+            y=prices,
+            name=publisher_name,
+            line=dict(color=COLOR_PER_PUBLISHER[publisher_name], width=2)
+        ))
+    
+    # Add median price trace
     fig.add_trace(go.Scatter(
         x=times,
-        y=pragma_prices,
-        name='Pragma',
+        y=median_prices,
+        name='Median Price',
         line=dict(color='green', width=2)
     ))
     
+    # Add other price feeds
     fig.add_trace(go.Scatter(
         x=times,
         y=pyth_prices,
@@ -70,14 +96,6 @@ def create_price_chart(history, selected_pair):
         name='Stork',
         line=dict(color='purple', width=2)
     ))
-
-    for source in publisher_prices:
-        fig.add_trace(go.Scatter(
-            x=times,
-            y=publisher_prices[source],
-            name=source,
-            line=dict(color=COLOR_PER_PUBLISHER[source], width=2)
-        ))
 
     fig.update_layout(
         title=f'{selected_pair} Price Comparison',
@@ -237,7 +255,7 @@ def main():
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    st.markdown("#### Pragma")
+                    st.markdown("#### Median Price")
                     st.markdown(f"<h2>${latest_pragma:,.2f}</h2>", unsafe_allow_html=True)
 
                 with col2:
